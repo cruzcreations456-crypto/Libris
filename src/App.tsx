@@ -747,13 +747,24 @@ export default function App() {
               <Search size={40} className="text-brand-olive" />
             </div>
             <h2 className="text-4xl font-serif font-bold mb-4">Database Connection Required</h2>
-            <p className="text-lg text-brand-ink/70 mb-8 leading-relaxed">
+            <p className="text-lg text-brand-ink/70 mb-4 leading-relaxed">
               {dbError}
             </p>
             
+            <div className="bg-brand-cream p-6 rounded-3xl text-left mb-8 space-y-3">
+              <p className="font-bold text-sm uppercase tracking-widest text-brand-olive">Troubleshooting Steps:</p>
+              <ul className="text-sm space-y-2 list-disc pl-5 opacity-80">
+                <li>Log in to your <strong>MongoDB Atlas</strong> dashboard.</li>
+                <li>Go to <strong>Network Access</strong> in the left sidebar.</li>
+                <li>Click <strong>Add IP Address</strong> and select <strong>Allow Access From Anywhere</strong> (0.0.0.0/0).</li>
+                <li>Ensure your database user has the correct permissions.</li>
+                <li>Wait 1-2 minutes for Atlas to apply the changes.</li>
+              </ul>
+            </div>
+            
             <button 
               onClick={() => window.location.reload()}
-              className="bg-brand-olive text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-brand-olive/20 hover:scale-105 transition-transform"
+              className="bg-brand-olive text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-brand-olive/20 hover:scale-105 transition-transform w-full"
             >
               Retry Connection
             </button>

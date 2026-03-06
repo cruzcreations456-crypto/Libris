@@ -3,71 +3,96 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { randomUUID } from 'crypto';
+import mongoose from 'mongoose';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MONGODB_URI = 'mongodb+srv://cruzcreations456_db_user:cruzcreations456_db_user@cluster0.5tkczbz.mongodb.net/book_community?appName=Cluster0';
 
-// --- IN-MEMORY DUMMY DATABASE ---
-const db = {
-  users: [] as any[],
-  communities: [] as any[],
-  community_members: [] as any[],
-  posts: [] as any[],
-  likes: [] as any[],
-  comments: [] as any[]
-};
+// --- MONGODB MODELS ---
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  bio: { type: String, default: '' },
+  avatar: { type: String }
+}, { 
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
-// Seed Data
-const seed = () => {
-  console.log('Seeding initial dummy data...');
-  const aliceId = randomUUID();
-  const bobId = randomUUID();
-  const communityId = randomUUID();
+const communitySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, default: '' },
+  creator_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  created_at: { type: Date, default: Date.now }
+}, { 
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
-  db.users.push(
-    { id: aliceId, username: 'Alice', password: 'password', bio: 'Avid reader of sci-fi.', avatar: 'https://picsum.photos/seed/alice/100/100' },
-    { id: bobId, username: 'Bob', password: 'password', bio: 'History buff.', avatar: 'https://picsum.photos/seed/bob/100/100' }
-  );
+const communityMemberSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  community_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Community', required: true }
+});
 
-  db.communities.push({
-    id: communityId,
-    name: 'Sci-Fi Explorers',
-    description: 'Discussing the future and beyond.',
-    creator_id: aliceId,
-    created_at: new Date().toISOString()
-  });
+const postSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  community_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Community' },
+  type: { type: String, default: 'tweet' },
+  content: { type: String, required: true },
+  book_title: { type: String },
+  rating: { type: Number },
+  image_url: { type: String },
+  created_at: { type: Date, default: Date.now }
+}, { 
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
-  db.community_members.push({ user_id: aliceId, community_id: communityId });
+const likeSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  post_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true }
+});
 
-  db.posts.push({
-    id: randomUUID(),
-    user_id: aliceId,
-    community_id: communityId,
-    type: 'review',
-    content: 'Just finished Dune. Mind blown!',
-    book_title: 'Dune',
-    rating: 5,
-    image_url: null,
-    created_at: new Date().toISOString()
-  });
-  console.log('Seeding complete');
-};
+const commentSchema = new mongoose.Schema({
+  post_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true },
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  content: { type: String, required: true },
+  created_at: { type: Date, default: Date.now }
+}, { 
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
-seed();
+const User = mongoose.model('User', userSchema);
+const Community = mongoose.model('Community', communitySchema);
+const CommunityMember = mongoose.model('CommunityMember', communityMemberSchema);
+const Post = mongoose.model('Post', postSchema);
+const Like = mongoose.model('Like', likeSchema);
+const Comment = mongoose.model('Comment', commentSchema);
 
 export const app = express();
 
 async function startServer() {
+  // Connect to MongoDB
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 15000, 
+      socketTimeoutMS: 45000,
+    });
+    console.log('[SERVER] Successfully connected to MongoDB');
+  } catch (err: any) {
+    console.error('[SERVER] MongoDB connection failed:', err.message);
+    mongoose.set('bufferCommands', false);
+  }
+
   app.use(express.json());
 
   // 1. GLOBAL MIDDLEWARE
   app.use((req, res, next) => {
-    console.log(`[SERVER v1.2.2] ${req.method} ${req.url} (original: ${req.originalUrl})`);
-    // Force JSON for all /api requests to prevent HTML fallback parsing errors
+    console.log(`[SERVER v2.0.0] ${req.method} ${req.url}`);
     if (req.url.startsWith('/api')) {
-      console.log(`[SERVER] API request detected: ${req.url}`);
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Cache-Control', 'no-store');
     }
@@ -75,180 +100,210 @@ async function startServer() {
   });
 
   // 2. API ROUTES
-  app.get('/api/test', (req, res) => {
-    res.json({ message: 'API is working with In-Memory Dummy DB', timestamp: new Date().toISOString() });
-  });
-
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
-      dbConnected: true, 
-      type: 'in-memory',
-      version: '1.2.3'
+      dbConnected: mongoose.connection.readyState === 1, 
+      type: 'mongodb',
+      version: '2.0.0'
     });
   });
 
-  app.get('/api/users', (req, res) => {
-    // Don't send passwords
-    res.json(db.users.map(({ password, ...u }) => u));
-  });
-
-  app.post('/api/auth/register', (req, res) => {
-    const { username, password, bio, avatar } = req.body;
-    if (db.users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
-      return res.status(400).json({ error: 'Username already exists' });
-    }
-    const id = randomUUID();
-    const newUser = {
-      id,
-      username,
-      password,
-      bio: bio || '',
-      avatar: avatar || `https://picsum.photos/seed/${username}/100/100`
-    };
-    db.users.push(newUser);
-    const { password: _, ...userWithoutPassword } = newUser;
-    res.json(userWithoutPassword);
-  });
-
-  app.post('/api/auth/login', (req, res) => {
-    const { username, password } = req.body;
-    const user = db.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
-    const { password: _, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
-  });
-
-  app.get('/api/communities', (req, res) => {
-    const results = db.communities.map(c => {
-      const creator = db.users.find(u => u.id === c.creator_id);
-      const memberCount = db.community_members.filter(m => m.community_id === c.id).length;
-      return {
-        ...c,
-        creator_name: creator ? creator.username : 'Unknown',
-        member_count: memberCount
-      };
-    });
-    res.json(results);
-  });
-
-  app.post('/api/communities', (req, res) => {
-    const { name, description, creator_id } = req.body;
-    const id = randomUUID();
-    const newCommunity = {
-      id,
-      name,
-      description,
-      creator_id,
-      created_at: new Date().toISOString()
-    };
-    db.communities.push(newCommunity);
-    db.community_members.push({ user_id: creator_id, community_id: id });
-    res.json({ id });
-  });
-
-  app.post('/api/communities/join', (req, res) => {
-    const { user_id, community_id } = req.body;
-    const exists = db.community_members.some(m => m.user_id === user_id && m.community_id === community_id);
-    if (exists) {
-      return res.status(400).json({ error: 'Already a member' });
-    }
-    db.community_members.push({ user_id, community_id });
-    res.json({ success: true });
-  });
-
-  app.get('/api/posts', (req, res) => {
-    const { community_id } = req.query;
-    console.log(`[API] Fetching posts for community: ${community_id || 'all'}`);
-    let filteredPosts = db.posts;
-    if (community_id) {
-      filteredPosts = db.posts.filter(p => p.community_id === community_id);
-    }
-
-    const results = filteredPosts.map(p => {
-      const user = db.users.find(u => u.id === p.user_id);
-      const community = db.communities.find(c => c.id === p.community_id);
-      const likeCount = db.likes.filter(l => l.post_id === p.id).length;
-      return {
-        ...p,
-        username: user ? user.username : 'Unknown',
-        avatar: user ? user.avatar : null,
-        community_name: community ? community.name : null,
-        like_count: likeCount
-      };
-    });
-    
-    // Sort by date descending
-    results.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    res.json(results);
-  });
-
-  app.post('/api/posts', (req, res) => {
-    const { user_id, community_id, type, content, book_title, rating, image_url } = req.body;
-    const id = randomUUID();
-    const newPost = {
-      id,
-      user_id,
-      community_id: community_id || null,
-      type: type || 'tweet',
-      content,
-      book_title: book_title || null,
-      rating: rating || null,
-      image_url: image_url || null,
-      created_at: new Date().toISOString()
-    };
-    db.posts.push(newPost);
-    res.json({ id });
-  });
-
-  app.post('/api/posts/like', (req, res) => {
-    const { user_id, post_id } = req.body;
-    const index = db.likes.findIndex(l => l.user_id === user_id && l.post_id === post_id);
-    if (index === -1) {
-      db.likes.push({ user_id, post_id });
-      res.json({ success: true });
-    } else {
-      db.likes.splice(index, 1);
-      res.json({ success: true, unliked: true });
+  app.get('/api/users', async (req, res) => {
+    try {
+      const users = await User.find({}, '-password');
+      res.json(users);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.get('/api/posts/:id/comments', (req, res) => {
-    const results = db.comments
-      .filter(c => c.post_id === req.params.id)
-      .map(c => {
-        const user = db.users.find(u => u.id === c.user_id);
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const { username, password, bio, avatar } = req.body;
+      const existing = await User.findOne({ username: new RegExp(`^${username}$`, 'i') });
+      if (existing) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+      const newUser = new User({
+        username,
+        password,
+        bio: bio || '',
+        avatar: avatar || `https://picsum.photos/seed/${username}/100/100`
+      });
+      await newUser.save();
+      const userObj = newUser.toJSON();
+      delete userObj.password;
+      res.json(userObj);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      const user = await User.findOne({ 
+        username: new RegExp(`^${username}$`, 'i'), 
+        password 
+      });
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+      const userObj = user.toJSON();
+      delete userObj.password;
+      res.json(userObj);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/communities', async (req, res) => {
+    try {
+      const communities = await Community.find().lean();
+      const results = await Promise.all(communities.map(async (c: any) => {
+        const creator = await User.findById(c.creator_id);
+        const memberCount = await CommunityMember.countDocuments({ community_id: c._id });
         return {
           ...c,
+          id: c._id.toString(),
+          creator_name: creator ? creator.username : 'Unknown',
+          member_count: memberCount
+        };
+      }));
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/communities', async (req, res) => {
+    try {
+      const { name, description, creator_id } = req.body;
+      const newCommunity = new Community({ name, description, creator_id });
+      await newCommunity.save();
+      const newMember = new CommunityMember({ user_id: creator_id, community_id: newCommunity._id });
+      await newMember.save();
+      res.json({ id: newCommunity._id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/communities/join', async (req, res) => {
+    try {
+      const { user_id, community_id } = req.body;
+      const exists = await CommunityMember.findOne({ user_id, community_id });
+      if (exists) {
+        return res.status(400).json({ error: 'Already a member' });
+      }
+      const newMember = new CommunityMember({ user_id, community_id });
+      await newMember.save();
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/posts', async (req, res) => {
+    try {
+      const { community_id } = req.query;
+      let query = {};
+      if (community_id) {
+        query = { community_id };
+      }
+
+      const posts = await Post.find(query).sort({ created_at: -1 }).lean();
+      const results = await Promise.all(posts.map(async (p: any) => {
+        const user = await User.findById(p.user_id);
+        const community = p.community_id ? await Community.findById(p.community_id) : null;
+        const likeCount = await Like.countDocuments({ post_id: p._id });
+        return {
+          ...p,
+          id: p._id.toString(),
+          username: user ? user.username : 'Unknown',
+          avatar: user ? user.avatar : null,
+          community_name: community ? community.name : null,
+          like_count: likeCount
+        };
+      }));
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/posts', async (req, res) => {
+    try {
+      const { user_id, community_id, type, content, book_title, rating, image_url } = req.body;
+      const newPost = new Post({
+        user_id,
+        community_id: community_id || null,
+        type: type || 'tweet',
+        content,
+        book_title: book_title || null,
+        rating: rating || null,
+        image_url: image_url || null
+      });
+      await newPost.save();
+      res.json({ id: newPost._id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/posts/like', async (req, res) => {
+    try {
+      const { user_id, post_id } = req.body;
+      const existing = await Like.findOne({ user_id, post_id });
+      if (!existing) {
+        const newLike = new Like({ user_id, post_id });
+        await newLike.save();
+        res.json({ success: true });
+      } else {
+        await Like.deleteOne({ _id: existing._id });
+        res.json({ success: true, unliked: true });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/posts/:id/comments', async (req, res) => {
+    try {
+      const comments = await Comment.find({ post_id: req.params.id }).sort({ created_at: 1 }).lean();
+      const results = await Promise.all(comments.map(async (c: any) => {
+        const user = await User.findById(c.user_id);
+        return {
+          ...c,
+          id: c._id.toString(),
           username: user ? user.username : 'Unknown',
           avatar: user ? user.avatar : null
         };
-      });
-    
-    // Sort by date ascending
-    results.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    res.json(results);
+      }));
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
-  app.post('/api/posts/:id/comments', (req, res) => {
-    const { user_id, content } = req.body;
-    const id = randomUUID();
-    const newComment = {
-      id,
-      post_id: req.params.id,
-      user_id,
-      content,
-      created_at: new Date().toISOString()
-    };
-    db.comments.push(newComment);
-    res.json({ id });
+  app.post('/api/posts/:id/comments', async (req, res) => {
+    try {
+      const { user_id, content } = req.body;
+      const newComment = new Comment({
+        post_id: req.params.id,
+        user_id,
+        content
+      });
+      await newComment.save();
+      res.json({ id: newComment._id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // 3. API CATCH-ALL
   app.all('/api/*', (req, res) => {
-    console.warn(`[API 404] ${req.method} ${req.url}`);
     res.status(404).json({ error: `API endpoint ${req.method} ${req.url} not found` });
   });
 
@@ -269,7 +324,7 @@ async function startServer() {
   const PORT = 3000;
   if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server v1.2.3 (In-Memory Dummy DB) running at http://localhost:${PORT}`);
+      console.log(`Server v2.0.0 (MongoDB) running at http://localhost:${PORT}`);
     });
   }
 }
