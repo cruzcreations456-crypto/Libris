@@ -57,8 +57,9 @@ const seed = () => {
 
 seed();
 
+export const app = express();
+
 async function startServer() {
-  const app = express();
   app.use(express.json());
 
   // 1. GLOBAL MIDDLEWARE
@@ -83,7 +84,7 @@ async function startServer() {
       status: 'ok', 
       dbConnected: true, 
       type: 'in-memory',
-      version: '1.2.1'
+      version: '1.2.3'
     });
   });
 
@@ -266,9 +267,11 @@ async function startServer() {
   }
 
   const PORT = 3000;
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server v1.2.2 (In-Memory Dummy DB) running at http://localhost:${PORT}`);
-  });
+  if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server v1.2.3 (In-Memory Dummy DB) running at http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
