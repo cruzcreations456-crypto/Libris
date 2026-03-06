@@ -63,9 +63,10 @@ async function startServer() {
 
   // 1. GLOBAL MIDDLEWARE
   app.use((req, res, next) => {
-    console.log(`[SERVER v1.2.1] ${req.method} ${req.url}`);
+    console.log(`[SERVER v1.2.2] ${req.method} ${req.url} (original: ${req.originalUrl})`);
     // Force JSON for all /api requests to prevent HTML fallback parsing errors
     if (req.url.startsWith('/api')) {
+      console.log(`[SERVER] API request detected: ${req.url}`);
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Cache-Control', 'no-store');
     }
@@ -159,6 +160,7 @@ async function startServer() {
 
   app.get('/api/posts', (req, res) => {
     const { community_id } = req.query;
+    console.log(`[API] Fetching posts for community: ${community_id || 'all'}`);
     let filteredPosts = db.posts;
     if (community_id) {
       filteredPosts = db.posts.filter(p => p.community_id === community_id);
@@ -265,7 +267,7 @@ async function startServer() {
 
   const PORT = 3000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server v1.2.1 (In-Memory Dummy DB) running at http://localhost:${PORT}`);
+    console.log(`Server v1.2.2 (In-Memory Dummy DB) running at http://localhost:${PORT}`);
   });
 }
 
